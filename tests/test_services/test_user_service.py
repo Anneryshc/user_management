@@ -163,3 +163,33 @@ async def test_unlock_user_account(db_session, locked_user):
     refreshed_user = await UserService.get_by_id(db_session, locked_user.id)
     assert not refreshed_user.is_locked, "The user should no longer be locked"
 
+# email is sent after user creation
+async def test_email_sent_after_user_creation(db_session, email_service):
+    async def mock_send_verification_email(user):
+        pass
+    email_service.send_verification_email = mock_send_verification_email
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "register_valid_user@example.com",
+        "password": "RegisterValid123!",
+        "role": UserRole.ADMIN
+    }
+
+    user = await UserService.register_user(db_session, user_data, email_service)
+
+    assert user is not None
+    assert user.email == user_data["email"]
+
+async def test_update_user_nickname(db_session, user):
+    new_nickname = "new_nickname"
+    updated_user = await UserService.update(db_session, user.id, {"nickname": new_nickname})
+    assert updated_user is not None
+    assert updated_user.nickname == new_nickname
+
+# Test verifying email(expired token)
+async def test_verify_email_with_expired_token(db_session, user):
+    expired_token = "expired_token_example"
+    user.verification_token = expired_token
+    await db_session.commit()
+    result = await UserService.verify_email_with_token(db_session, user.id, expired_token)
+    assert result is True
