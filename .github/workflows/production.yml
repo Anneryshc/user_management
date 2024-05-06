@@ -69,10 +69,10 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-           push: true
+          push: true
           tags: anneryshc/user_management:${{ github.sha }} # Uses the Git SHA for tagging
           platforms: linux/amd64,linux/arm64 # Multi-platform support
-          cache-from: type=registry,ref=anneryshc/user_management:cache
+          cache-from: type=registry,ref=kaw393939/wis_club_api:cache
           cache-to: type=inline,mode=max
           
       - name: Scan the Docker image
