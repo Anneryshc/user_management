@@ -67,10 +67,9 @@ class UserService:
             user_count = await cls.count(session)
             new_user.role = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS            
             if new_user.role == UserRole.ADMIN:
-                new_user.email_verified = True
+                new_user.email_verified = True  # Auto-verify admin for convenience
 
-            else:
-                new_user.verification_token = generate_verification_token()
+            new_user.verification_token = generate_verification_token()
 
             session.add(new_user)
             await session.commit()
@@ -170,6 +169,7 @@ class UserService:
         if user and user.verification_token == token:
             user.email_verified = True
             user.verification_token = None  # Clear the token once used
+        if user.role ==UserRole.ANONYMOUS:
             user.role = UserRole.AUTHENTICATED
             session.add(user)
             await session.commit()
