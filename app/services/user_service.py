@@ -18,6 +18,7 @@ import logging
 from sqlalchemy import func, update, select
 from app.schemas.user_schemas import UserCreate, UserUpdate, UserResponse
 
+
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
