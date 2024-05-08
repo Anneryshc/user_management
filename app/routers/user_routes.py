@@ -31,8 +31,26 @@ from app.schemas.user_schemas import LoginRequest, UserBase, UserCreate, UserLis
 from app.services.user_service import UserService
 from app.services.jwt_service import create_access_token
 from app.utils.link_generation import create_user_links, generate_pagination_links
-from app.dependencies import get_settings
+from app.dependencies import get_settings, require_role
 from app.services.email_service import EmailService
+from typing import List
+from builtins import dict, int, len, str
+from datetime import timedelta
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.dependencies import get_current_user, get_db, get_email_service, require_role
+from app.schemas.pagination_schema import EnhancedPagination
+from app.schemas.token_schema import TokenResponse
+from app.schemas.user_schemas import LoginRequest, UserBase, UserCreate, UserListResponse, UserResponse, UserUpdate
+from app.services.user_service import UserService
+from app.services.jwt_service import create_access_token
+from app.utils.link_generation import create_user_links, generate_pagination_links
+from app.dependencies import get_settings, require_role
+from app.services.email_service import EmailService
+from typing import List
+
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 settings = get_settings()
@@ -99,6 +117,7 @@ async def update_user(user_id: UUID, user_update: UserUpdate, request: Request, 
         nickname=updated_user.nickname,
         email=updated_user.email,
         role=updated_user.role,
+        is_professional=updated_user.is_professional,  # Include is_professional in the response
         last_login_at=updated_user.last_login_at,
         profile_picture_url=updated_user.profile_picture_url,
         github_profile_url=updated_user.github_profile_url,
@@ -140,9 +159,9 @@ async def create_user(user: UserCreate, request: Request, db: AsyncSession = Dep
     Returns:
     - UserResponse: The newly created user's information along with navigation links.
     """
-    existing_user = await UserService.get_by_email(db, user.email)
+    existing_user = await UserService.get_by_email_case_insensitive(db, user.email.strip().lower())
     if existing_user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists")
     
     created_user = await UserService.create(db, user.model_dump(), email_service)
     if not created_user:
@@ -245,3 +264,41 @@ async def verify_email(user_id: UUID, token: str, db: AsyncSession = Depends(get
     if await UserService.verify_email_with_token(db, user_id, token):
         return {"message": "Email verified successfully"}
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification token")
+
+@router.put("/users/me", response_model=UserResponse, name="update_user_name", tags=["User Management"])
+async def update_user_name(
+    user_update: UserUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update the current user's name.
+
+    - **user_update**: UserUpdate model with the updated first_name and last_name.
+    """
+    if not current_user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    user_id = current_user.get("sub")
+    user_data = user_update.model_dump(include={"first_name", "last_name"}, exclude_unset=True)
+    updated_user = await UserService.update(db, user_id, user_data)
+    if not updated_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    return UserResponse.model_construct(
+        id=updated_user.id,
+        bio=updated_user.bio,
+        first_name=updated_user.first_name,
+        last_name=updated_user.last_name,
+        nickname=updated_user.nickname,
+        email=updated_user.email,
+        role=updated_user.role,
+        last_login_at=updated_user.last_login_at,
+        profile_picture_url=updated_user.profile_picture_url,
+        github_profile_url=updated_user.github_profile_url,
+        linkedin_profile_url=updated_user.linkedin_profile_url,
+        created_at=updated_user.created_at,
+        updated_at=updated_user.updated_at,
+        links=create_user_links(updated_user.id, request)
+    )
