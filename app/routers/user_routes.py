@@ -17,43 +17,46 @@ Key Highlights:
 - Implements HATEOAS by generating dynamic links for user-related actions, enhancing API discoverability.
 - Utilizes OAuth2PasswordBearer for securing API endpoints, requiring valid access tokens for operations.
 """
-
 from builtins import dict, int, len, str
 from datetime import timedelta
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.dependencies import get_current_user, get_db, get_email_service, require_role
+from app.dependencies import get_current_user, get_db, get_email_service, require_role, get_settings
 from app.schemas.pagination_schema import EnhancedPagination
 from app.schemas.token_schema import TokenResponse
 from app.schemas.user_schemas import LoginRequest, UserBase, UserCreate, UserListResponse, UserResponse, UserUpdate
 from app.services.user_service import UserService
 from app.services.jwt_service import create_access_token
 from app.utils.link_generation import create_user_links, generate_pagination_links
-from app.dependencies import get_settings, require_role
-from app.services.email_service import EmailService
-from typing import List
-from builtins import dict, int, len, str
-from datetime import timedelta
-from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.dependencies import get_current_user, get_db, get_email_service, require_role
-from app.schemas.pagination_schema import EnhancedPagination
-from app.schemas.token_schema import TokenResponse
-from app.schemas.user_schemas import LoginRequest, UserBase, UserCreate, UserListResponse, UserResponse, UserUpdate
-from app.services.user_service import UserService
-from app.services.jwt_service import create_access_token
-from app.utils.link_generation import create_user_links, generate_pagination_links
-from app.dependencies import get_settings, require_role
 from app.services.email_service import EmailService
 from typing import List
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 settings = get_settings()
+@router.put("/profile/update", response_model=UserResponse, tags=["Profile"])
+async def update_profile(
+    user_update: UserUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update user profile information.
+
+    - user_update: UserUpdate model with updated user information.
+    """
+    # Get the user ID from the current user's dictionary
+    user_id = current_user.get("id")
+    
+    # Update user profile
+    updated_user = await UserService.update_profile(db, user_id, user_update)
+    if not updated_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return updated_user
+    
 @router.get("/users/{user_id}", response_model=UserResponse, name="get_user", tags=["User Management Requires (Admin or Manager Roles)"])
 async def get_user(user_id: UUID, request: Request, db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme), current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))):
     """
@@ -214,7 +217,11 @@ async def list_users(
 @router.post("/register/", response_model=UserResponse, tags=["Login and Registration"])
 async def register(user_data: UserCreate, session: AsyncSession = Depends(get_db), email_service: EmailService = Depends(get_email_service)):
     user = await UserService.register_user(session, user_data.model_dump(), email_service)
-    if user:
+    if user == "PASSWORD_REQUIRED":
+        raise HTTPException(status_code=400, detail="Password is required.")
+    elif user == "PASSWORD_TOO_SHORT":
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+    elif user:
         return user
     raise HTTPException(status_code=400, detail="Email already exists")
 

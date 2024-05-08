@@ -32,7 +32,7 @@ async def test_create_user_with_invalid_data(db_session, email_service):
         "password": "short",  # Invalid password
     }
     user = await UserService.create(db_session, user_data, email_service)
-    assert user is None
+    assert user == 'PASSWORD_TOO_SHORT', "Expected 'PASSWORD_TOO_SHORT' for short password"
 
 # Test fetching a user by ID when the user exists
 async def test_get_by_id_user_exists(db_session, user):
@@ -115,7 +115,7 @@ async def test_register_user_with_invalid_data(db_session, email_service):
         "password": "short",  # Invalid password
     }
     user = await UserService.register_user(db_session, user_data, email_service)
-    assert user is None
+    assert user == 'PASSWORD_TOO_SHORT', "Expected 'PASSWORD_TOO_SHORT' for short password"
 
 # Test successful user login
 async def test_login_user_successful(db_session, verified_user):
@@ -247,18 +247,25 @@ async def test_invalid_token_verification(db_session):
     assert not outcome, "Verification should fail with an incorrect token"
 
 # Test for handling registration with inadequate data
-async def test_unsuccessful_user_registration(db_session, email_service):
-    # Setup with flawed data
-    erroneous_user_data = {
-        "email": "incorrect_email_format",
-        "password": "12345",  # Too short to be secure
+async def test_register_user_with_missing_password(db_session, email_service):
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "user_missing_password@example.com",
+        "role": UserRole.ANONYMOUS.name  # Assuming UserRole.ANONYMOUS is valid
     }
+    user = await UserService.create(db_session, user_data, email_service)
+    assert user == 'PASSWORD_REQUIRED', "Expected response for missing password"
 
-    # Attempt to register a user
-    potential_user = await UserService.register_user(db_session, erroneous_user_data, email_service)
-
-    # Check for failure in registration
-    assert potential_user is None, "No user should be registered with flawed data"
+# Test error for password that is too short
+async def test_password_too_short_error(db_session, email_service):
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "valid_email@example.com",
+        "password": "123",  # Deliberately short password
+        "role": UserRole.ANONYMOUS.name
+    }
+    user = await UserService.create(db_session, user_data, email_service)
+    assert user == 'PASSWORD_TOO_SHORT', "Expected response for short password"
 
 # Test inability to delete a user account
 async def test_failure_in_user_deletion(db_session, user):

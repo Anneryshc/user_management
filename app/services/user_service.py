@@ -55,28 +55,40 @@ class UserService:
 
     @classmethod
     async def create(cls, session: AsyncSession, user_data: Dict[str, str], email_service: EmailService) -> Optional[User]:
+        existing_user = await cls.get_by_email(session, user_data.get('email'))
+        if existing_user:
+            logger.error("User with given email already exists.")
+            return None
+        if 'password' not in user_data or not user_data['password']:
+            logger.error("Password is required.")
+            return 'PASSWORD_REQUIRED'
+
+        if len(user_data['password'].strip()) < 8:  
+            logger.error("Password too short.")
+            return 'PASSWORD_TOO_SHORT'
+        
         try:
             user_count = await cls.count(session)
             user_role = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS
             user_data['role'] = user_role  
 
             validated_data = UserCreate(**user_data).model_dump()
-            existing_user = await cls.get_by_email(session, validated_data['email'])
-            if existing_user:
-                logger.error("User with given email already exists.")
-                return None
-            validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
-            new_user = User(**validated_data)
-
+            validated_data['hashed_password'] = hash_password(user_data['password'])
+            validated_data.pop('password', None)
+    
             new_nickname = generate_nickname()
             while await cls.get_by_nickname(session, new_nickname):
                 new_nickname = generate_nickname()
-            new_user.nickname = new_nickname
+            validated_data['nickname'] = new_nickname
 
-            if new_user.role == UserRole.ADMIN:
-                new_user.email_verified = True 
 
-            new_user.verification_token = generate_verification_token()
+            validated_data['role'] = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS
+            validated_data['email_verified'] = (validated_data['role'] == UserRole.ADMIN)
+            if validated_data['role'] != UserRole.ADMIN:
+                validated_data['verification_token'] = generate_verification_token()
+
+            # Create and add ne
+            new_user = User(**validated_data)
 
             session.add(new_user)
             await session.commit()
@@ -249,3 +261,5 @@ class UserService:
         ]
 
         return user_responses
+
+
