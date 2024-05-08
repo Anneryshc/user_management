@@ -16,7 +16,9 @@ from app.services.email_service import EmailService
 from app.models.user_model import UserRole
 import logging
 from sqlalchemy import func, update, select
+from app.services.email_service import EmailService
 from app.schemas.user_schemas import UserCreate, UserUpdate, UserResponse
+
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -106,8 +108,12 @@ class UserService:
                  validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
         
            
-            query = update(User).where(User.id == user_id).values(**validated_data).execution_options(synchronize_session="fetch")
-            result = await cls._execute_query(session, query)
+            if 'is_professional' in validated_data:
+                is_professional = validated_data.pop('is_professional')
+                query = update(User).where(User.id == user_id).values(is_professional=is_professional, **validated_data).execution_options(synchronize_session="fetch")
+            else:
+                query = update(User).where(User.id == user_id).values(**validated_data).execution_options(synchronize_session="fetch")
+                result = await cls._execute_query(session, query)
             if result is None:
                 logger.error(f"Update failed for User {user_id}")
                 return None
